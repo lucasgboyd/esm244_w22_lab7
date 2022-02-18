@@ -12,7 +12,7 @@ library(here)
 library(sf)
 library(tmap)
 library(gstat)
-library(stars)
+library(stars) # THE NEW STANDARD FOR SPATIAL ANALYSIS IN R - HELL YEAH
 ```
 
 ## Read in the California depth to groundwater data
@@ -68,7 +68,7 @@ sj_county_sf <- ca_counties_sf %>%
 
 # Now keep observations for groundwater depth within that county:
 sj_depth_sf <- ca_dgw_sf %>% 
-  st_intersection(sj_county_sf)
+  st_intersection(sj_county_sf) # take two spatial datasets, overlap them, and take only the space that intersects
 
 # Make a quick plot of those: 
 ggplot() +
@@ -84,14 +84,14 @@ Interpolation chokes when observations at identical location - spatial singulari
 
 ```{r}
 well_duplicates <- sj_depth_sf %>% 
-  janitor::get_dupes(latitude, longitude)
+  janitor::get_dupes(latitude, longitude) # check for duplicates simultaneously in the lat and long columns
 
 well_duplicates
 
 # This will cause problems (0 spatial variance). We're just going to get rid of these problematic wells recorded at the same location: 
 
 sj_depth_sf <- sj_depth_sf %>% 
-  filter(!local_well %in% well_duplicates$local_well)
+  filter(!local_well %in% well_duplicates$local_well) 
 
 # Check again for duplicates: 
 sj_depth_sf %>% 
@@ -104,7 +104,7 @@ sj_depth_sf %>%
 
 ```{r}
 # Create the variogram
-sj_dgw_vgm <- gstat::variogram(dgbs ~ 1, data = sj_depth_sf)
+sj_dgw_vgm <- gstat::variogram(dgbs ~ 1, data = sj_depth_sf) # as a function of 1, means we're doing ordinary kriging. Use this function to calculate an intercept that's gonna be our mean value 
 
 # Plot it
 plot(sj_dgw_vgm) # Looks variogramish! Increasing variance as observations get further apart. Let's model this...
@@ -114,7 +114,7 @@ sj_dgw_vgm_fit <- fit.variogram(sj_dgw_vgm,
                                 model = vgm(model = "Gau")) ### default starting
 sj_dgw_vgm_fit <- fit.variogram(sj_dgw_vgm, 
                                 model = vgm(model = "Gau", ### (leave with defaults first)
-                                            nugget = 20, sill = 3000, range = 30000))
+                                            nugget = 20, sill = 3000, range = 32000))
 
 # Plot them together:
 plot(sj_dgw_vgm, sj_dgw_vgm_fit) 
@@ -129,10 +129,10 @@ attr(sj_dgw_vgm_fit, 'SSErr') # ...and you could compare to other models...
 ```{r}
 
 # Make a grid over which we'll krige: 
-sj_grid <- st_bbox(sj_county_sf) %>%
-  st_as_stars(dx = 1000, dy = 1000) %>%
-  st_set_crs(st_crs(sj_county_sf)) %>%
-  st_crop(sj_county_sf)
+sj_grid <- st_bbox(sj_county_sf) %>% # take the county outline and create a bounding box 
+  st_as_stars(dx = 1000, dy = 1000) %>% # every 1000m we will try to estimate the well depth
+  st_set_crs(st_crs(sj_county_sf)) %>% # set the CRS to make sure that they line up 
+  st_crop(sj_county_sf) # crop the grid so it only includes points within the outline of this polygon
 
 sj_grid
 
@@ -140,7 +140,9 @@ sj_grid
 plot(sj_grid)
 
 # Perform ordinary kriging: 
-sj_dgw_krige <- krige(dgbs ~ 1, sj_depth_sf, sj_grid, model = sj_dgw_vgm_fit)
+sj_dgw_krige <- krige(dgbs ~ 1, sj_depth_sf, 
+                      sj_grid, # the grid we set up 
+                      model = sj_dgw_vgm_fit) # this is the one from the variogram
 
 # Initial plot of kriging outcome: 
 plot(sj_dgw_krige)
